@@ -12,6 +12,8 @@ services:
     volumes:
       - ./init-scripts:/opt/oracle/scripts/startup # auto-run
       - oracle_data_cdc:/opt/oracle/oradata
+      # Fast Recovery Area (MANDATORY for archivelog + LogMiner)
+      - oracle_fra_cdc:/opt/oracle/fast_recovery_area
     networks:
       - debezuim-net
 
@@ -26,6 +28,7 @@ services:
 
 volumes:
   oracle_data_cdc:
+  oracle_fra_cdc:
 
 networks:
   debezuim-net:
