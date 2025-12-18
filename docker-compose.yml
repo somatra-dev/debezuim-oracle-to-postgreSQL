@@ -1,0 +1,223 @@
+services:
+  cdc-postgres:
+    image: postgres:16
+    container_name: cdc-postgres
+    ports:
+      - 5168:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+    volumes:
+      - pg_data_cdc:/var/lib/postgresql/data
+    networks:
+      - debezuim-net
+
+  kafka-1:
+    image: apache/kafka:4.1.1
+    container_name: kafka-1
+    ports:
+      - "29093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT-INTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-1:29092,2@kafka-2:29092,3@kafka-3:29092'
+      KAFKA_LISTENERS: 'PLAINTEXT-INTERNAL://:19093,CONTROLLER://kafka-1:29092,PLAINTEXT://:9093'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT-INTERNAL'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT-INTERNAL://kafka-1:19093,PLAINTEXT://localhost:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: 'zglfG84cQ5-dJGT24vPiug'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      # Remove SSL Configuration
+    volumes:
+      - kafka_1_vol:/var/lib/kafka/data
+    networks:
+      - debezuim-net
+
+  kafka-2:
+    image: apache/kafka:4.1.1
+    container_name: kafka-2
+    ports:
+      - "39093:9093"
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT-INTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-1:29092,2@kafka-2:29092,3@kafka-3:29092'
+      KAFKA_LISTENERS: 'PLAINTEXT-INTERNAL://:19093,CONTROLLER://kafka-2:29092,PLAINTEXT://:9093'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT-INTERNAL'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT-INTERNAL://kafka-2:19093,PLAINTEXT://localhost:39093
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: 'zglfG84cQ5-dJGT24vPiug'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      # Remove SSL Configuration
+    volumes:
+      - kafka_2_vol:/var/lib/kafka/data
+    networks:
+      - debezuim-net
+
+  kafka-3:
+    image: apache/kafka:4.1.1
+    container_name: kafka-3
+    ports:
+      - "49093:9093"
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT-INTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-1:29092,2@kafka-2:29092,3@kafka-3:29092'
+      KAFKA_LISTENERS: 'PLAINTEXT-INTERNAL://:19093,CONTROLLER://kafka-3:29092,PLAINTEXT://:9093'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT-INTERNAL'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT-INTERNAL://kafka-3:19093,PLAINTEXT://localhost:49093
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: 'zglfG84cQ5-dJGT24vPiug'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      # Remove SSL Configuration
+    volumes:
+      - kafka_3_vol:/var/lib/kafka/data
+    networks:
+      - debezuim-net
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.8.0
+    container_name: schema-registry
+    ports: 
+      - "8081:8081"
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_DEBUG: "true"
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 3
+      # Change to PLAINTEXT for Kafka connection
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "kafka-1:19093,kafka-2:19093,kafka-3:19093"
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+      # Remove SSL configuration
+    volumes:
+      - schema_registry_data:/etc/schema-registry/data
+    networks:
+      - debezuim-net
+
+  debezium-kafka-connect:
+    build: .
+    image: debezium-kafka-connect
+    container_name: debezium-kafka-connect
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - schema-registry
+    ports:
+      - "8083:8083"
+    environment:
+      # Base Configuration
+      GROUP_ID: cdc_connect-group
+      BOOTSTRAP_SERVERS: "kafka-1:19093,kafka-2:19093,kafka-3:19093"
+
+      # Storage Topics Configuration
+      CONFIG_STORAGE_TOPIC: cdc_connect_configs
+      OFFSET_STORAGE_TOPIC: cdc_connect_offsets
+      STATUS_STORAGE_TOPIC: cdc_connect_status
+      
+      # Schema Registry Integration:
+      KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
+      VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+
+      # Change to PLAINTEXT protocol
+      CONNECT_SECURITY_PROTOCOL: "PLAINTEXT"
+      CONNECT_PRODUCER_SECURITY_PROTOCOL: "PLAINTEXT"
+      CONNECT_CONSUMER_SECURITY_PROTOCOL: "PLAINTEXT"
+
+      CONNECT_PRODUCER_REQUEST_TIMEOUT_MS_CONFIG: 60000
+      CONNECT_CONSUMER_REQUEST_TIMEOUT_MS_CONFIG: 60000
+
+      # Remove all SSL-related environment variables
+    volumes:
+      - ./csv-data/:/csv-data/
+      - debezium_plugins:/kafka/connect/plugins
+      - debezium_data:/kafka/data
+    networks:
+      - debezuim-net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "18000:8080"
+    environment:
+      # Basic Auth for UI (optional but recommended)
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: admin
+      SPRING_SECURITY_USER_PASSWORD: admin-secret
+      # Kafka Cluster Configuration - Change to PLAINTEXT
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19093,kafka-2:19093,kafka-3:19093
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: PLAINTEXT
+      # Remove SSL configuration
+      # Schema Registry Configuration
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      # Kafka Connect Configuration
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium-kafka-connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://debezium-kafka-connect:8083
+    volumes:
+      - kafka-ui-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18000/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - schema-registry
+      - debezium-kafka-connect
+    # Resource limits for stability
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    networks:
+      - debezuim-net
+
+volumes:
+  kafka_1_vol:
+  kafka_2_vol:
+  kafka_3_vol:
+  kafka-ui-data:
+  pg_data_cdc:
+  oracle_data_cdc:
+  debezium_plugins:
+  debezium_data:
+  schema_registry_data:
+
+networks:
+  debezuim-net:
+    external: true
+    name: debezuim-net
